@@ -1,35 +1,69 @@
-require 'ohm'
-require 'ohm/expire'
-
-class RpmBuildNode < Ohm::Model
-  include Ohm::Expire
+class RpmBuildNode
+  MAIN_KEY_FIELDS = [:id, :host]
+  REDIS_NAMESPACE = self.name
+  LIST_OF_OBJECTS = "#{REDIS_NAMESPACE}:all"
 
   TTL = 120
 
-  expire TTL
+  %w(
+    id
+    host
+    user_id
+    system
+    busy
+    query_string
+    last_build_id
+  ).each { |attr| attr_reader attr }
 
-  attribute :user_id
-  attribute :worker_count
-  attribute :busy_workers
-  attribute :system
-  attribute :host
-  attribute :query_string
-  attribute :last_build_id
+  def initialize(opts = {})
+    opts.keys.each do |key|
+      instance_variable_set "@#{key}", opts[key]
+    end
+  end
 
-  def user
-    User.where(id: user_id).first
+  def self.create_or_update(opts = {})
+    $redis.with do |r|
+      key = MAIN_KEY_FIELDS.map { |key| opts[key] }.join(':')
+      redis_name = "#{REDIS_NAMESPACE}:#{key}"
+      r.multi do
+        r.sadd LIST_OF_OBJECTS, key
+        r.setex redis_name, TTL, Oj.dump(opts, mode: :compat)
+      end
+    end
+  end
+
+  def self.all
+    Enumerator.new do |y|
+      $redis.with do |r|
+        r.smembers(LIST_OF_OBJECTS).each do |key|
+          json = r.get("#{REDIS_NAMESPACE}:#{key}")
+          next if !json
+          data = JSON.parse(json)
+          y << new(data)
+        end
+      end
+    end
   end
 
   def self.total_statistics
     systems, others, busy = 0, 0, 0
-    RpmBuildNode.all.select{ |n| n.user_id }.each do |n|
-      if n.system == 'true'
-        systems += n.worker_count.to_i
+    all.each do |n|
+      if n.system
+        systems += 1
       else
-        others += n.worker_count.to_i
+        others += 1
       end
-      busy += n.busy_workers.to_i
+      busy += 1 if n.busy
     end
     { systems: systems, others: others, busy: busy }
+  end
+
+  def self.cleanup
+    $redis.with do |r|
+      r.smembers(LIST_OF_OBJECTS).each do |key|
+        item = "#{REDIS_NAMESPACE}:#{key}"
+        r.srem LIST_OF_OBJECTS, key if !r.exists(item)
+      end
+    end
   end
 end

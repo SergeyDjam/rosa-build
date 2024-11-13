@@ -1,9 +1,5 @@
 - title = title_object(@mass_build)
-- set_meta_tags title: title
-- set_meta_tags og:      { title:       title,
-                           description: truncate(@mass_build.description, length: 255) }
-- set_meta_tags twitter: { title:       title,
-                           description: truncate(@mass_build.description, length: 200) }
+- set_page_title title
 
 = render 'submenu'
 
@@ -141,6 +137,13 @@
           method: :post,
           data:   { confirm: t("layout.confirm") },
           class:  'btn btn-warning'
+        hr
+      - if policy(@mass_build).publish_into_testing?
+        = link_to t('layout.mass_builds.publish_into_testing'),
+          publish_into_testing_platform_mass_build_path(@platform, @mass_build.id),
+          method: :post,
+          data:   { confirm: t("layout.confirm") },
+          class:  'btn btn-success'
         hr
       - if policy(@mass_build).cancel?
         = link_to t('layout.cancel'),

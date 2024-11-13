@@ -11,7 +11,7 @@ ru:
     advisories: Бюллетени
     statistics: Статистика
   bottom_menu:
-    copyright: ROSA Лаб. © %{year}
+    copyright: ROSA Лаб. &copy; %{year}
     about: О компании
     about_url: http://www.rosalab.ru/about
     contacts: Контакты
@@ -32,7 +32,6 @@ ru:
     tags: Теги (%{count})
     builds: Сборки
     tracker: Трекер (%{count})
-    wiki: Wiki
     readme: Readme
     settings: Настройки
     pull_requests: Пул реквесты (%{count})
@@ -46,7 +45,6 @@ ru:
     code: Код
     tracker: Трекер
     build: Сборка
-    wiki: Вики
   platform_menu:
     settings: Настройки
   admins_menu_header: ЦУ

@@ -1,4 +1,4 @@
--set_meta_tags title: [title_object(@platform), t('layout.tokens.header')]
+-set_page_title [title_object(@platform), t('layout.tokens.header')]
 = render 'submenu'
 
 .container.col-md-offset-2.col-md-8
@@ -43,3 +43,8 @@
                   withdraw_platform_token_path(@platform, @token),
                   method: :post, class: 'btn btn-danger',
                   data: { confirm: t('layout.tokens.withdraw_confirm') }
+    - if @token.blocked?
+        = link_to t('layout.tokens.reactivate'),
+                  reactivate_platform_token_path(@platform, @token),
+                  method: :post, class: 'btn btn-success',
+                  data: { confirm: t('layout.tokens.reactivate_confirm') }

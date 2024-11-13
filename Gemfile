@@ -2,10 +2,9 @@ source 'https://rubygems.org'
 
 gem 'rails'
 
-gem 'activeadmin',                      github: 'activeadmin'
+gem 'activeadmin'
 gem 'pg'
 gem 'schema_plus'
-########
 gem 'devise'
 gem 'pundit'
 
@@ -15,62 +14,39 @@ gem 'resque'
 gem 'resque-status'
 gem 'resque_mailer'
 gem 'resque-scheduler', '~> 2.5.4'
-gem 'perform_later', git: 'git://github.com/KensoDev/perform_later.git' # should be after resque_mailer
+gem 'perform_later', git: 'https://github.com/KensoDev/perform_later.git' # should be after resque_mailer
 gem 'russian'
-gem 'highline', '~> 1.6.20'
 gem 'state_machines-activerecord'
 gem 'redis-rails'
 
-gem 'grack', git: 'git://github.com/rosa-abf/grack.git'
-gem 'grit', git: 'git://github.com/rosa-abf/grit.git', branch: 'rosa'
+gem 'ngmin-rails'
+
+gem 'grack', git: 'https://github.com/rosa-abf/grack.git'
+gem 'grit', git: 'https://github.com/rosa-abf/grit.git', branch: 'rosa'
 gem 'charlock_holmes'
 gem 'github-linguist', require: 'linguist'
 gem 'diff-display'
 
-# Wiki
-gem 'gollum-lib', '~> 3.0'
 gem 'redcarpet', '~> 3.5'
-gem 'creole'
-gem 'rdiscount'
-gem 'RedCloth'
-gem 'wikicloth'
-
-gem 'whenever', require: false
 
 gem 'jbuilder'
 gem 'rails3-jquery-autocomplete'
 gem 'sprockets'
 gem 'will_paginate'
-gem 'meta-tags', require: 'meta_tags'
 gem 'haml-rails'
 gem 'jquery-rails'
-gem 'jquery-migrate-rails'
-gem 'ruby-haml-js'
 gem 'slim'
 gem 'simple_form', '3.1.0.rc2'
 gem 'friendly_id'
 
-gem 'rack-throttle', '~> 0.3.0'
 gem 'rest-client'
-gem 'ohm', '~> 1.3.2' # Ohm 2 breaks the compatibility with previous versions.
-gem 'ohm-expire', '~> 0.1.3'
 
 gem 'ffi'
 
 gem 'attr_encrypted'
 gem 'gemoji'
 
-# AngularJS related stuff
-gem 'underscore-rails'
-gem 'angularjs-rails', '~> 1.3.14'
-gem 'ng-rails-csrf'
-gem 'momentjs-rails'
-gem 'angular-i18n'
 gem 'js-routes'
-gem 'soundmanager-rails'
-gem 'angular-ui-bootstrap-rails'
-gem 'angular-rails-templates'
-gem 'ngmin-rails'
 
 gem 'time_diff'
 
@@ -79,9 +55,7 @@ gem 'coffee-rails'
 gem 'bootstrap-sass'
 gem 'font-awesome-rails'
 
-gem 'compass-rails'
 gem 'uglifier'
-gem 'sitemap_generator'
 
 gem 'codemirror-rails', '~> 4.5'
 
@@ -95,22 +69,15 @@ gem 'connection_pool'
 
 gem 'recaptcha'
 
-gem 'pygments.rb'
+gem 'rouge'
 
-group :production do
-  gem 'puma'
-end
+gem 'puma'
+
+gem 'oj'
+
+gem 'connection_pool'
 
 group :development do
-  gem 'mailcatcher' # 'letter_opener'
-  gem 'rails3-generators'
-  gem 'hirb'
-  gem 'shotgun'
-  # Better Errors & RailsPanel
-  gem 'better_errors'
-  gem 'binding_of_caller'
-  gem 'meta_request'
-  gem 'localeapp'
   gem 'rack-mini-profiler', require: false
 end
 

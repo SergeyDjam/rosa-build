@@ -9,15 +9,9 @@ Rails.application.routes.draw do
     end
   end
 
-  # Redirect sitemap1.xml.gz file on AWS S3
-  match '/sitemap.xml.gz' => 'sitemap#show', via: [:get, :post, :head], as: :sitemap
-  match '/robots.txt' => 'sitemap#robots', via: [:get, :post, :head], as: :robots
+  match '/robots.txt' => 'robots#index', via: [:get, :post, :head], as: :robots
 
   resources :statistics, only: [:index]
-#  resource :contact, only: [:new, :create, :sended] do
-#    get '/' => 'contacts#new'
-#    get :sended
-#  end
 
   devise_scope :user do
     get 'users/sign_up' => 'users/registrations#new',    as: :new_user_registration
@@ -28,7 +22,11 @@ Rails.application.routes.draw do
 
   namespace :api do
     namespace :v1, constraints: { format: 'json' }, defaults: { format: 'json' } do
-      resources :advisories, only: [:index, :show, :create, :update]
+      resources :advisories, only: [:index, :show, :create, :update, :destroy] do
+        member {
+          post :attach_build_list
+        }
+      end
       resources :search, only: [:index]
       resources :build_lists, only: [:index, :create, :show] do
         member {
@@ -55,6 +53,16 @@ Rails.application.routes.draw do
           put :clear
         }
         resources :maintainers, only: [ :index ]
+      end
+      resources :tokens, except: %i(edit new) do
+        collection {
+          get :hidden_platforms
+          get :allowed
+        }
+        member {
+          post :activate
+          post :deactivate
+        }
       end
       resources :repositories, only: [:show, :update, :destroy] do
         member {
@@ -191,6 +199,7 @@ Rails.application.routes.draw do
         member do
           post   :cancel
           post   :publish
+          post   :publish_into_testing
           get 'show_fail_reason(/:page)' => 'mass_builds#show_fail_reason', as: :show_fail_reason, page: /[0-9]+/, defaults: { page: '1' }
           get '/:kind' => "mass_builds#get_list", as: :get_list, kind: /failed_builds_list|missed_projects_list|projects_list|tests_failed_builds_list|success_builds_list/
         end
@@ -213,6 +222,7 @@ Rails.application.routes.draw do
       resources :tokens, only: [:create, :index, :show, :new] do
         member do
           post :withdraw
+          post :reactivate
         end
       end
       resources :products do
@@ -305,29 +315,6 @@ Rails.application.routes.draw do
     end
     scope '*name_with_owner', name_with_owner: Project::OWNER_AND_NAME_REGEXP do # project
       scope as: 'project' do
-        resources :wiki do
-          collection do
-            match '_history' => 'wiki#wiki_history', as: :history, via: :get
-            match '_access' => 'wiki#git', as: :git, via: :get
-            match '_revert/:sha1/:sha2' => 'wiki#revert_wiki', as: :revert, via: [:get, :post]
-            match '_compare' => 'wiki#compare_wiki', as: :compare, via: :post
-            #match '_compare/:versions' => 'wiki#compare_wiki', versions: /.*/, as: :compare_versions, via: :get
-            match '_compare/:versions' => 'wiki#compare_wiki', versions: /([a-f0-9\^]{6,40})(\.\.\.[a-f0-9\^]{6,40})/, as: :compare_versions, via: :get
-            post :preview
-            get :search
-            get :pages
-          end
-          member do
-            get :history
-            get :edit
-            match 'revert/:sha1/:sha2' => 'wiki#revert', as: :revert_page, via: [:get, :post]
-            match ':ref' => 'wiki#show', as: :versioned, via: :get
-
-            post :compare
-            #match 'compare/*versions' => 'wiki#compare', as: :compare_versions, via: :get
-            match 'compare/:versions' => 'wiki#compare', versions: /([a-f0-9\^]{6,40})(\.\.\.[a-f0-9\^]{6,40})/, as: :compare_versions, via: :get
-          end
-        end
         resources :issues, except: [:destroy, :edit] do
           resources :comments, only: [:edit, :create, :update, :destroy]
           post '/subscribe'     => "subscribes#create", as: :subscribe

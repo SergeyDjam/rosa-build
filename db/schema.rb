@@ -11,7 +11,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema.define(version: 20210203100058) do
+ActiveRecord::Schema.define(version: 20230110075556) do
 
   # These are extensions that must be enabled in order to support this database
   enable_extension "plpgsql"
@@ -37,17 +37,62 @@ ActiveRecord::Schema.define(version: 20210203100058) do
     t.datetime "updated_at",  :null=>false
   end
 
-  create_table "advisories_platforms", id: false, force: :cascade do |t|
-    t.integer "advisory_id", :index=>{:name=>"index_advisories_platforms_on_advisory_id"}
-    t.integer "platform_id", :index=>{:name=>"index_advisories_platforms_on_platform_id"}
+  create_table "platforms", force: :cascade do |t|
+    t.string   "description",                     :limit=>255
+    t.string   "name",                            :limit=>255, :null=>false, :index=>{:name=>"index_platforms_on_name", :unique=>true, :case_sensitive=>false}
+    t.integer  "parent_platform_id"
+    t.datetime "created_at"
+    t.datetime "updated_at"
+    t.boolean  "released",                        :default=>false, :null=>false
+    t.integer  "owner_id"
+    t.string   "owner_type",                      :limit=>255
+    t.string   "visibility",                      :limit=>255, :default=>"open", :null=>false
+    t.string   "platform_type",                   :limit=>255, :default=>"main", :null=>false
+    t.string   "distrib_type",                    :limit=>255, :null=>false
+    t.integer  "status"
+    t.datetime "last_regenerated_at"
+    t.integer  "last_regenerated_status"
+    t.string   "last_regenerated_log_sha1",       :limit=>255
+    t.string   "automatic_metadata_regeneration", :limit=>255
+    t.string   "default_branch",                  :limit=>255, :null=>false
   end
-  add_index "advisories_platforms", ["advisory_id", "platform_id"], :name=>"advisory_platform_index", :unique=>true
 
-  create_table "advisories_projects", id: false, force: :cascade do |t|
-    t.integer "advisory_id", :index=>{:name=>"index_advisories_projects_on_advisory_id"}
-    t.integer "project_id",  :index=>{:name=>"index_advisories_projects_on_project_id"}
+  create_table "projects", force: :cascade do |t|
+    t.string   "name",                     :limit=>255, :index=>{:name=>"index_projects_on_name_and_owner_id_and_owner_type", :with=>["owner_id", "owner_type"], :unique=>true, :case_sensitive=>false}
+    t.datetime "created_at"
+    t.datetime "updated_at"
+    t.integer  "owner_id"
+    t.string   "owner_type",               :limit=>255
+    t.string   "visibility",               :limit=>255, :default=>"open"
+    t.text     "description"
+    t.string   "ancestry",                 :limit=>255
+    t.boolean  "has_issues",               :default=>true
+    t.string   "srpm_file_name",           :limit=>255
+    t.integer  "srpm_file_size"
+    t.datetime "srpm_updated_at"
+    t.string   "srpm_content_type",        :limit=>255
+    t.string   "default_branch",           :limit=>255, :default=>"master"
+    t.boolean  "is_package",               :default=>true, :null=>false
+    t.integer  "maintainer_id"
+    t.boolean  "publish_i686_into_x86_64", :default=>false
+    t.string   "owner_uname",              :limit=>255, :null=>false
+    t.boolean  "architecture_dependent",   :default=>false, :null=>false
+    t.integer  "autostart_status"
+    t.integer  "alias_from_id",            :index=>{:name=>"index_projects_on_alias_from_id"}
   end
-  add_index "advisories_projects", ["advisory_id", "project_id"], :name=>"advisory_project_index", :unique=>true
+
+  create_table "advisory_items", force: :cascade do |t|
+    t.integer "advisory_id", :index=>{:name=>"index_advisory_items_on_advisory_id"}, :foreign_key=>{:references=>"advisories", :name=>"fk_advisory_items_advisory_id", :on_update=>:no_action, :on_delete=>:no_action}
+    t.integer "platform_id", :index=>{:name=>"index_advisory_items_on_platform_id"}, :foreign_key=>{:references=>"platforms", :name=>"fk_advisory_items_platform_id", :on_update=>:no_action, :on_delete=>:no_action}
+    t.integer "project_id",  :index=>{:name=>"index_advisory_items_on_project_id"}, :foreign_key=>{:references=>"projects", :name=>"fk_advisory_items_project_id", :on_update=>:no_action, :on_delete=>:no_action}
+  end
+  add_index "advisory_items", ["advisory_id", "platform_id", "project_id"], :name=>"unique_platform_project", :unique=>true
+
+  create_table "ar_internal_metadata", primary_key: "key", force: :cascade do |t|
+    t.string   "value"
+    t.datetime "created_at", :null=>false
+    t.datetime "updated_at", :null=>false
+  end
 
   create_table "arches", force: :cascade do |t|
     t.string   "name",       :limit=>255, :null=>false, :index=>{:name=>"index_arches_on_name", :unique=>true}
@@ -192,37 +237,39 @@ ActiveRecord::Schema.define(version: 20210203100058) do
   end
 
   create_table "users", force: :cascade do |t|
-    t.string   "name",                    :limit=>255
-    t.string   "email",                   :limit=>255, :default=>"", :null=>false, :index=>{:name=>"index_users_on_email", :unique=>true}
-    t.string   "encrypted_password",      :limit=>128, :default=>"", :null=>false
-    t.string   "reset_password_token",    :limit=>255, :index=>{:name=>"index_users_on_reset_password_token", :unique=>true}
+    t.string   "name",                     :limit=>255
+    t.string   "email",                    :limit=>255, :default=>"", :null=>false, :index=>{:name=>"index_users_on_email", :unique=>true}
+    t.string   "encrypted_password",       :limit=>128, :default=>"", :null=>false
+    t.string   "reset_password_token",     :limit=>255, :index=>{:name=>"index_users_on_reset_password_token", :unique=>true}
     t.datetime "reset_password_sent_at"
     t.datetime "remember_created_at"
     t.datetime "created_at"
     t.datetime "updated_at"
     t.text     "ssh_key"
-    t.string   "uname",                   :limit=>255, :index=>{:name=>"index_users_on_uname", :unique=>true}
-    t.string   "role",                    :limit=>255
-    t.string   "language",                :limit=>255, :default=>"en"
-    t.integer  "own_projects_count",      :default=>0, :null=>false
+    t.string   "uname",                    :limit=>255, :index=>{:name=>"index_users_on_uname", :unique=>true}
+    t.string   "role",                     :limit=>255
+    t.string   "language",                 :limit=>255, :default=>"en"
+    t.integer  "own_projects_count",       :default=>0, :null=>false
     t.text     "professional_experience"
-    t.string   "site",                    :limit=>255
-    t.string   "company",                 :limit=>255
-    t.string   "location",                :limit=>255
-    t.string   "avatar_file_name",        :limit=>255
-    t.string   "avatar_content_type",     :limit=>255
+    t.string   "site",                     :limit=>255
+    t.string   "company",                  :limit=>255
+    t.string   "location",                 :limit=>255
+    t.string   "avatar_file_name",         :limit=>255
+    t.string   "avatar_content_type",      :limit=>255
     t.integer  "avatar_file_size"
     t.datetime "avatar_updated_at"
-    t.integer  "failed_attempts",         :default=>0
-    t.string   "unlock_token",            :limit=>255, :index=>{:name=>"index_users_on_unlock_token", :unique=>true}
+    t.integer  "failed_attempts",          :default=>0
+    t.string   "unlock_token",             :limit=>255, :index=>{:name=>"index_users_on_unlock_token", :unique=>true}
     t.datetime "locked_at"
-    t.string   "confirmation_token",      :limit=>255, :index=>{:name=>"index_users_on_confirmation_token", :unique=>true}
+    t.string   "confirmation_token",       :limit=>255, :index=>{:name=>"index_users_on_confirmation_token", :unique=>true}
     t.datetime "confirmed_at"
     t.datetime "confirmation_sent_at"
-    t.string   "authentication_token",    :limit=>255, :index=>{:name=>"index_users_on_authentication_token"}
-    t.integer  "build_priority",          :default=>50
-    t.boolean  "sound_notifications",     :default=>true
-    t.boolean  "hide_email",              :default=>true, :null=>false
+    t.string   "authentication_token",     :limit=>255, :index=>{:name=>"index_users_on_authentication_token"}
+    t.integer  "build_priority",           :default=>50
+    t.boolean  "sound_notifications",      :default=>true
+    t.boolean  "hide_email",               :default=>true, :null=>false
+    t.boolean  "access_to_token_api",      :default=>false
+    t.boolean  "access_to_advisories_api", :default=>false
   end
 
   create_table "invites", force: :cascade do |t|
@@ -248,13 +295,14 @@ ActiveRecord::Schema.define(version: 20210203100058) do
   end
 
   create_table "key_pairs", force: :cascade do |t|
-    t.text     "public",           :null=>false
-    t.text     "encrypted_secret", :null=>false
-    t.string   "key_id",           :limit=>255, :null=>false
-    t.integer  "user_id",          :null=>false
-    t.integer  "repository_id",    :null=>false, :index=>{:name=>"index_key_pairs_on_repository_id", :unique=>true}
-    t.datetime "created_at",       :null=>false
-    t.datetime "updated_at",       :null=>false
+    t.text     "public",              :null=>false
+    t.text     "encrypted_secret",    :null=>false
+    t.string   "key_id",              :limit=>255, :null=>false
+    t.integer  "user_id",             :null=>false
+    t.integer  "repository_id",       :null=>false, :index=>{:name=>"index_key_pairs_on_repository_id", :unique=>true}
+    t.datetime "created_at",          :null=>false
+    t.datetime "updated_at",          :null=>false
+    t.string   "encrypted_secret_iv", :index=>{:name=>"index_key_pairs_on_encrypted_secret_iv", :unique=>true}
   end
 
   create_table "labelings", force: :cascade do |t|
@@ -309,26 +357,6 @@ ActiveRecord::Schema.define(version: 20210203100058) do
     t.datetime "updated_at",  :null=>false
   end
 
-  create_table "platforms", force: :cascade do |t|
-    t.string   "description",                     :limit=>255
-    t.string   "name",                            :limit=>255, :null=>false, :index=>{:name=>"index_platforms_on_name", :unique=>true, :case_sensitive=>false}
-    t.integer  "parent_platform_id"
-    t.datetime "created_at"
-    t.datetime "updated_at"
-    t.boolean  "released",                        :default=>false, :null=>false
-    t.integer  "owner_id"
-    t.string   "owner_type",                      :limit=>255
-    t.string   "visibility",                      :limit=>255, :default=>"open", :null=>false
-    t.string   "platform_type",                   :limit=>255, :default=>"main", :null=>false
-    t.string   "distrib_type",                    :limit=>255, :null=>false
-    t.integer  "status"
-    t.datetime "last_regenerated_at"
-    t.integer  "last_regenerated_status"
-    t.string   "last_regenerated_log_sha1",       :limit=>255
-    t.string   "automatic_metadata_regeneration", :limit=>255
-    t.string   "default_branch",                  :limit=>255, :null=>false
-  end
-
   create_table "product_build_lists", force: :cascade do |t|
     t.integer  "product_id",      :index=>{:name=>"index_product_build_lists_on_product_id"}
     t.integer  "status",          :null=>false
@@ -337,7 +365,7 @@ ActiveRecord::Schema.define(version: 20210203100058) do
     t.integer  "project_id"
     t.string   "project_version", :limit=>255
     t.string   "commit_hash",     :limit=>255
-    t.string   "params",          :limit=>255
+    t.text     "params"
     t.string   "main_script",     :limit=>255
     t.text     "results"
     t.integer  "arch_id"
@@ -354,7 +382,7 @@ ActiveRecord::Schema.define(version: 20210203100058) do
     t.datetime "updated_at"
     t.text     "description"
     t.integer  "project_id"
-    t.string   "params",           :limit=>255
+    t.text     "params"
     t.string   "main_script",      :limit=>255
     t.integer  "time_living"
     t.integer  "autostart_status"
@@ -396,31 +424,6 @@ ActiveRecord::Schema.define(version: 20210203100058) do
     t.datetime "created_at"
     t.datetime "updated_at"
     t.hstore   "autostart_options"
-  end
-
-  create_table "projects", force: :cascade do |t|
-    t.string   "name",                     :limit=>255, :index=>{:name=>"index_projects_on_name_and_owner_id_and_owner_type", :with=>["owner_id", "owner_type"], :unique=>true, :case_sensitive=>false}
-    t.datetime "created_at"
-    t.datetime "updated_at"
-    t.integer  "owner_id"
-    t.string   "owner_type",               :limit=>255
-    t.string   "visibility",               :limit=>255, :default=>"open"
-    t.text     "description"
-    t.string   "ancestry",                 :limit=>255
-    t.boolean  "has_issues",               :default=>true
-    t.string   "srpm_file_name",           :limit=>255
-    t.integer  "srpm_file_size"
-    t.datetime "srpm_updated_at"
-    t.string   "srpm_content_type",        :limit=>255
-    t.boolean  "has_wiki",                 :default=>false
-    t.string   "default_branch",           :limit=>255, :default=>"master"
-    t.boolean  "is_package",               :default=>true, :null=>false
-    t.integer  "maintainer_id"
-    t.boolean  "publish_i686_into_x86_64", :default=>false
-    t.string   "owner_uname",              :limit=>255, :null=>false
-    t.boolean  "architecture_dependent",   :default=>false, :null=>false
-    t.integer  "autostart_status"
-    t.integer  "alias_from_id",            :index=>{:name=>"index_projects_on_alias_from_id"}
   end
 
   create_table "pull_requests", force: :cascade do |t|

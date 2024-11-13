@@ -1,4 +1,4 @@
--set_meta_tags title: [title_object(@project), t('layout.projects.sections')]
+-set_page_title [title_object(@project), t('layout.projects.sections')]
 = render 'submenu'
 
 .container.col-md-offset-2.col-md-8
@@ -12,9 +12,6 @@
 
       = f.input :has_issues, as: :boolean,
         hint: t('layout.projects.has_issue_description')
-
-      = f.input :has_wiki, as: :boolean,
-        hint: t('layout.projects.has_wiki_description')
 
       .col-sm-offset-3.col-sm-9
         = submit_button_tag

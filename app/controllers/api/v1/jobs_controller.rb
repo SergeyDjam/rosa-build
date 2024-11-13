@@ -1,6 +1,4 @@
 class Api::V1::JobsController < Api::V1::BaseController
-  # QUEUES = %w(iso_worker_observer publish_observer rpm_worker_observer)
-  # QUEUE_CLASSES = %w(AbfWorker::IsoWorkerObserver AbfWorker::PublishObserver AbfWorker::RpmWorkerObserver)
   QUEUES = %w(rpm_worker_observer)
   QUEUE_CLASSES = %w(AbfWorker::RpmWorkerObserver)
 
@@ -8,41 +6,52 @@ class Api::V1::JobsController < Api::V1::BaseController
   skip_after_action :verify_authorized
 
   def shift
-    job_shift_sem = Redis::Semaphore.new(:job_shift_lock)
-    job_shift_sem.lock do
-      build_lists = BuildList.scoped_to_arch(arch_ids).
-      for_status([BuildList::BUILD_PENDING, BuildList::RERUN_TESTS]).
-      for_platform(platform_ids).where(builder: nil)
-
-      if current_user.system?
-        build_lists = build_lists.where(external_nodes: ["", nil, "everything"])
-        uid = build_lists.where(mass_build_id: nil).pluck('DISTINCT user_id').sample
-        if !uid
-          uid = build_lists.pluck('DISTINCT user_id').sample
-          mass_build = true
+    $redis.with do |r|
+      job_shift_sem = Redis::Semaphore.new(:job_shift_lock, redis: r)
+      job_shift_sem.lock do
+        shifted_build_lists = r.smembers('abf_worker:shifted_build_lists')
+        build_lists = if shifted_build_lists.empty?
+          BuildList
         else
-          mass_build = false
+          BuildList.where.not(id: shifted_build_lists)
         end
+        build_lists = build_lists.scoped_to_arch(arch_ids).for_platform(platform_ids).
+        for_status([BuildList::BUILD_PENDING, BuildList::RERUN_TESTS]).where(builder_id: nil)
 
-        if uid
-          if !mass_build
-            @build_list = build_lists.where(user_id: uid, mass_build_id: nil).order(:created_at).first
+        if current_user.system?
+          build_lists = build_lists.where(external_nodes: ["", nil, "everything"])
+          uid = build_lists.where(mass_build_id: nil).pluck('DISTINCT user_id').sample
+          if !uid
+            uid = build_lists.pluck('DISTINCT user_id').sample
+            mass_build = true
           else
-            @build_list = build_lists.where(user_id: uid).order(:created_at).first
+            mass_build = false
+          end
+
+          if uid
+            if !mass_build
+              @build_list = build_lists.where(user_id: uid, mass_build_id: nil).order(:id).limit(1).first
+            else
+              @build_list = build_lists.where(user_id: uid).order(:id).limit(1).first
+            end
+          end
+        else
+          tmp           = build_lists.external_nodes(:owned).for_user(current_user).order(:created_at)
+          @build_list   = tmp.where(mass_build_id: nil).first
+          @build_list ||= tmp.first
+          if !@build_list
+            tmp           = BuildListPolicy::Scope.new(current_user, build_lists).owned.
+                            external_nodes(:everything).readonly(false).order(:created_at)
+            @build_list ||= tmp.where(mass_build_id: nil).first
+            @build_list ||= tmp.first
           end
         end
-      else
-        tmp           = build_lists.external_nodes(:owned).for_user(current_user).order(:created_at)
-        @build_list   = tmp.where(mass_build_id: nil).first
-        @build_list ||= tmp.first
-        if !@build_list
-          tmp           = BuildListPolicy::Scope.new(current_user, build_lists).owned.
-                          external_nodes(:everything).readonly(false).order(:created_at)
-          @build_list ||= tmp.where(mass_build_id: nil).first
-          @build_list ||= tmp.first
+        if @build_list
+          r.sadd('abf_worker:shifted_build_lists', @build_list.id)
+          @build_list.builder = current_user
+          @build_list.save(validate: false)
         end
       end
-      set_builder
     end
 
     job = {
@@ -50,18 +59,17 @@ class Api::V1::JobsController < Api::V1::BaseController
       worker_class: '',
       :worker_args  => [@build_list.abf_worker_args]
     } if @build_list
-    render json: { job: job }.to_json
+    render json: Oj.dump({ job: job }, mode: :compat)
   end
 
   def statistics
     if params[:uid].present?
-      RpmBuildNode.create(
+      RpmBuildNode.create_or_update(
         id:            params[:uid],
+        host:          params[:host].to_s,
         user_id:       current_user.id,
         system:        current_user.system?,
-        worker_count:  params[:worker_count],
-        busy_workers:  params[:busy_workers],
-        host:          params[:host].to_s,
+        busy:          params[:busy_workers] == 1,
         query_string:  params[:query_string].to_s,
         last_build_id: params[:last_build_id].to_s
       ) rescue nil
@@ -71,16 +79,16 @@ class Api::V1::JobsController < Api::V1::BaseController
 
   def status
     if params[:key] =~ /\Aabfworker::(rpm|iso)-worker-[\d]+::live-inspector\z/
-      status = Redis.current.get(params[:key])
+      status = $redis.with { |r| r.get(params[:key]) }
     end
     render json: { status: status }.to_json
   end
 
   def logs
     name = params[:name]
-    if name =~ /abfworker::rpm-worker/
-      if current_user.system? || current_user.id == BuildList.where(id: name.gsub(/[^\d]/, '')).first.try(:builder_id)
-        BuildList.log_server.setex name, 15, params[:logs]
+    if name.start_with?('abfworker::rpm-worker-')
+      if current_user.system? || current_user.id == BuildList.find_by_id(name.split('-').second).try(:builder_id)
+        $redis.with { |r| r.setex name, 15, params[:logs] }
       end
     end
     render nothing: true
@@ -102,29 +110,31 @@ class Api::V1::JobsController < Api::V1::BaseController
   protected
 
   def platform_ids
-    @platform_ids ||= begin
-      platform_types = params[:platform_types].to_s.split(',') & APP_CONFIG['distr_types']
-      platforms = params[:platforms].to_s.split(',')
-      platforms = platforms.present? ? Platform.where(name: platforms).pluck(:id) : []
-      platforms |= Platform.main.where(distrib_type: platform_types).pluck(:id) if !platform_types.empty?
-      platforms
+    platforms = params[:platforms].to_s.split(',')
+    platforms = platforms.present? ? Platform.where(name: platforms).pluck(:id) : []
+
+    platform_types = params[:platform_types].to_s.split(',') & APP_CONFIG['distr_types']
+    if !platform_types.empty?
+      distrib_type_to_ids = Rails.cache.fetch('distrib_type_to_ids', expires_in: 1.hour) do
+        res = {}
+        Platform.main.pluck(:distrib_type, :id).each do |item|
+          res[item[0]] ||= []
+          res[item[0]] << item[1]
+        end
+        res
+      end
+      platform_types.each do |type|
+        platforms |= distrib_type_to_ids[type]
+      end
     end
+    platforms
   end
 
   def arch_ids
-    @arch_ids ||= begin
-      arches = params[:arches].to_s.split(',')
-      arches.present? ? Arch.where(name: arches).pluck(:id) : []
+    arches = Rails.cache.fetch("arches_to_ids", expires_in: 24.hours) do
+      Arch.pluck(:name, :id).to_h
     end
-  end
-
-  def set_builder
-    return unless @build_list
-    @build_list.builder = current_user
-    if !@build_list.valid?
-      Raven.capture_message('Invalid build list', extra: { id: @build_list.id, errors: @build_list.errors.full_messages })
-    end
-    @build_list.save(validate: false)
+    params[:arches].to_s.split(',').uniq.map { |arch| arches[arch] }.compact
   end
 
 end

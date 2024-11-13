@@ -41,8 +41,8 @@ class Platform < ActiveRecord::Base
   has_many :actors, as: :target, class_name: 'Relation', dependent: :destroy
   has_many :members, through: :actors, source: :actor, source_type: 'User'
 
-
-  has_and_belongs_to_many :advisories
+  has_many :advisory_items
+  has_many :advisories, -> { distinct }, through: :advisory_items
 
   has_many :packages, class_name: "BuildList::Package", dependent: :destroy
 
@@ -204,7 +204,7 @@ class Platform < ActiveRecord::Base
 
   def full_clone(attrs = {})
     base_clone(attrs).tap do |c|
-      with_skip {c.save} and c.clone_relations(self) and c.fs_clone # later with resque
+      c.save and c.clone_relations(self) and c.fs_clone # later with resque
     end
   end
 
@@ -237,9 +237,6 @@ class Platform < ActiveRecord::Base
     end
   end
 
-  def destroy
-    with_skip {super} # avoid cascade XML RPC requests
-  end
   later :destroy, queue: :low
 
   def default_host
@@ -253,6 +250,7 @@ class Platform < ActiveRecord::Base
 
     return true unless platform_name
     platform_name = platform_name[0].gsub(/\//, '')
+    return true if platform_name == 'rosa2019.1'
 
     Rails.cache.fetch([platform_name, token, :platform_allowed], expires_in: 2.minutes) do
       platform = Platform.find_by name: platform_name

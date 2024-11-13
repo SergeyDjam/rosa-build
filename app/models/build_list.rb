@@ -17,7 +17,7 @@ class BuildList < ActiveRecord::Base
   belongs_to :user
   belongs_to :builder,    class_name: 'User'
   belongs_to :publisher,  class_name: 'User'
-  belongs_to :advisory
+  # belongs_to :advisory
   belongs_to :mass_build, counter_cache: true
   has_many :items, class_name: '::BuildList::Item', dependent: :destroy
   has_many :packages, class_name: '::BuildList::Package', dependent: :destroy
@@ -51,10 +51,10 @@ class BuildList < ActiveRecord::Base
 
   validates_numericality_of :priority, greater_than_or_equal_to: 0
   validates :auto_publish_status, inclusion: { in: AUTO_PUBLISH_STATUSES }
-  validates :update_type, inclusion: UPDATE_TYPES,
-            unless: Proc.new { |b| b.advisory.present? }
-  validates :update_type, inclusion: { in: RELEASE_UPDATE_TYPES, message: I18n.t('flash.build_list.frozen_platform') },
-            if: Proc.new { |b| b.advisory.present? }
+  validates :update_type, inclusion: UPDATE_TYPES
+            # unless: Proc.new { |b| b.advisory.present? }
+  # validates :update_type, inclusion: { in: RELEASE_UPDATE_TYPES, message: I18n.t('flash.build_list.frozen_platform') },
+  #           if: Proc.new { |b| b.advisory.present? }
   validate -> {
     if save_to_platform.try(:main?) && save_to_platform_id != build_for_platform_id
       errors.add(:build_for_platform, I18n.t('flash.build_list.wrong_platform'))
@@ -190,11 +190,25 @@ class BuildList < ActiveRecord::Base
         build_list.cleanup_packages_from_testing
       end
     end
+    after_transition do |build_list, transition|
+      if transition.from == BUILD_PENDING || transition.from == RERUN_TESTS ||
+         (transition.to == BUILD_PENDING && transition.from != WAITING_FOR_RESPONSE)
+        $redis.with { |r| r.srem('abf_worker:shifted_build_lists', build_list.id) }
+      end
+      if transition.to == RERUN_TESTS
+        build_list.builder_id = nil
+        build_list.save
+      end
+    end
     after_transition on: :cancel, do: :cancel_job
 
     after_transition on: %i(published fail_publish build_error tests_failed unpermitted_arch), do: :notify_users
     after_transition on: :build_success, do: :notify_users,
       unless: ->(build_list) { build_list.auto_publish? || build_list.auto_publish_into_testing? }
+
+    before_transition on: :reject_publish, do: :cleanup_packages_from_testing, if: ->(bl) {
+      bl.status == BUILD_PUBLISHED_INTO_TESTING
+    }
 
     event :place_build do
       transition waiting_for_response: :build_pending
@@ -489,11 +503,19 @@ class BuildList < ActiveRecord::Base
   end
 
   def human_current_duration
-    I18n.t("layout.build_lists.human_current_duration", {hours: (current_duration/3600).to_i, minutes: (current_duration%3600/60).to_i})
+    I18n.t("layout.build_lists.human_current_duration", {
+      hours: (current_duration/3600).to_i,
+      minutes: (current_duration%3600/60).to_i,
+      seconds: (current_duration%60).to_i
+    })
   end
 
   def human_duration
-    I18n.t("layout.build_lists.human_duration", {hours: (duration.to_i/3600).to_i, minutes: (duration.to_i%3600/60).to_i})
+    I18n.t("layout.build_lists.human_duration", {
+      hours: (duration.to_i/3600).to_i,
+      minutes: (duration.to_i%3600/60).to_i,
+      seconds: (duration.to_i%60).to_i
+    })
   end
 
   def in_work?
@@ -501,25 +523,21 @@ class BuildList < ActiveRecord::Base
     #[WAITING_FOR_RESPONSE, BUILD_PENDING, BUILD_STARTED].include?(status)
   end
 
-  def associate_and_create_advisory(params)
-    build_advisory(params){ |a| a.update_type = update_type }
-    advisory.attach_build_list(self)
-  end
+  # def associate_and_create_advisory(params)
+  #   build_advisory(params){ |a| a.update_type = update_type }
+  #   advisory.attach_build_list(self)
+  # end
 
-  def can_attach_to_advisory?
-    !save_to_repository.publish_without_qa &&
-      save_to_platform.main? &&
-      save_to_platform.released &&
-      build_published?
-  end
+  # def can_attach_to_advisory?
+  #   #!save_to_repository.publish_without_qa &&
+  #     save_to_platform.main? &&
+  #     #save_to_platform.released &&
+  #     build_published?
+  # end
 
   def log(load_lines=nil)
-    if new_core?
-      worker_log = abf_worker_log
-      Pygments.highlight(worker_log, lexer: 'sh') rescue worker_log
-    else
-      I18n.t('layout.build_lists.log.not_available')
-    end
+    worker_log = abf_worker_log
+    Rouge::Formatters::HTML.new.format(Rouge::Lexers::Shell.new.lex(worker_log)) rescue worker_log
   end
 
   def last_published(testing = false)
@@ -682,7 +700,7 @@ class BuildList < ActiveRecord::Base
   end
 
   def prepare_extra_repositories
-    if save_to_platform && save_to_platform.main?
+    if save_to_platform && save_to_platform.main? && self.mass_build_id.nil?
       self.extra_repositories = nil
     else
       self.extra_repositories = PlatformPolicy::Scope.new(user, Repository.joins(:platform)).show.

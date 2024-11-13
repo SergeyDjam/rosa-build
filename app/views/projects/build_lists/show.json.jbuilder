@@ -36,11 +36,6 @@ json.build_list do
       json.path user_path(@build_list.builder)
     end if @build_list.builder && (!@build_list.builder.system? || current_user.try(:admin?))
 
-    json.advisory do
-      json.(@build_list.advisory, :description, :advisory_id)
-      json.path advisory_path(@build_list.advisory)
-    end if @build_list.advisory
-
     json.results @build_list.results do |result|
       json.file_name result['file_name']
       json.sha1 result['sha1']
@@ -54,7 +49,7 @@ json.build_list do
     dependent_projects_exists = false
     json.packages @build_list.packages do |package|
       json.(package, :id, :name, :fullname, :release, :version, :sha1, :epoch)
-      json.url "#{APP_CONFIG['file_store_url']}/api/v1/file_stores/#{package.sha1}" if package.sha1
+      json.url "#{APP_CONFIG['file_store_url'].gsub('http://', 'https://')}/api/v1/file_stores/#{package.sha1}" if package.sha1
       if package.size == 0
         json.size 'N/A'
       else

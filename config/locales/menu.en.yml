@@ -11,7 +11,7 @@ en:
     advisories: Advisories
     statistics: Statistics
   bottom_menu:
-    copyright: ROSA Lab © %{year}
+    copyright: ROSA Lab &copy; %{year}
     about: About the company
     about_url: http://www.rosalab.com/about
     contacts: Contacts
@@ -32,7 +32,6 @@ en:
     tags: Tags (%{count})
     builds: Builds
     tracker: Tracker (%{count})
-    wiki: Wiki
     readme: Readme
     settings: Settings
     pull_requests: Pull Requests (%{count})
@@ -46,7 +45,6 @@ en:
     code: Code
     tracker: Tracker
     build: Build
-    wiki: Wiki
   platform_menu:
     settings: Settings
   admins_menu_header: Admin

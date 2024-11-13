@@ -2,13 +2,16 @@ class PlatformContent
 
   attr_reader :path
 
-  def initialize(platform, path)
+  def initialize(platform, path, build_list = nil)
     @platform, @path = platform, path
+    if build_list
+      @build_list = build_list
+    end
   end
 
   def build_list
     return @build_list if !!@build_list
-    return nil if @path !~ /\/(release|updates)+\/[\w\-\.\+]+$/
+    return nil if @path !~ /\/(release|updates)+\/[\w\-\.\+\~]+$/
     return nil unless repository_name = @path.match(/\/[\w]+\/(release|updates)\//)
     repository_name = repository_name[0].gsub(/\/(release|updates)\/$/, '').gsub('/', '')
 
@@ -58,17 +61,30 @@ class PlatformContent
 
   def self.find_by_platform(platform, path, term)
     # Strip out the non-ascii character
-    term = (term || '').strip.gsub(/[\\\/]+/, '')
-                             .gsub(/[^\w\-\+\.]/, '_')
-
     path = sanitize_path(path)
-    results = Dir.glob(File.join(platform.path, path, "*#{term}*"))
-    if term
-      results = results.sort_by(&:length)
+
+    if term =~ /^bl:\d+$/
+      id = term[3..-1].to_i
+      bl = BuildList.find_by_id(id)
+      if bl != nil
+        bl.packages.pluck(:fullname).sort_by(&:length).
+        map { |name| File.join(platform.path, path, name) }.
+        select { |p| File.file?(p) }.
+        map { |p| PlatformContent.new(platform, p, bl) }
+      else
+        []
+      end
     else
-      results = results.sort
+      term = (term || '').strip.gsub(/[\\\/]+/, '')
+                               .gsub(/[^\w\-\+\.\~]/, '_')
+      results = Dir.glob(File.join(platform.path, path, "*#{term}*"))
+      if term
+        results = results.sort_by(&:length)
+      else
+        results = results.sort
+      end
+      results.map{ |p| PlatformContent.new(platform, p) }
     end
-    results.map{ |p| PlatformContent.new(platform, p) }
   end
 
   def self.remove_file(platform, path)
@@ -82,7 +98,7 @@ class PlatformContent
           # Strip out the non-ascii character
           p.gsub(/[\\\/]+/, '')
            .gsub(/^[\.]+/, '')
-           .gsub(/[^\w\-\+\.]/, '_')
+           .gsub(/[^\w\-\+\.\~]/, '_')
         }.join(File::SEPARATOR)
   end
 
